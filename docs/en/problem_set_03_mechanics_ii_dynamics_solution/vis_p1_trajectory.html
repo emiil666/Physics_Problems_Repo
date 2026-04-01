@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>P1 – 2D Trajectory</title>
+<style>
+  body { margin: 0; background: #0f0f1a; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+  h2 { color: #7eb8f7; margin-bottom: 4px; }
+  p.sub { color: #aaa; font-size: 13px; margin: 0 0 16px; }
+  canvas { background: #16182a; border: 1px solid #2a2d4a; border-radius: 8px; }
+  .info { display: flex; gap: 24px; margin-top: 14px; font-size: 13px; }
+  .badge { background: #1e2240; border-radius: 6px; padding: 6px 14px; }
+  .badge span { color: #7eb8f7; font-weight: bold; }
+  button { margin-top: 14px; background: #2d5fff; color: #fff; border: none; padding: 8px 22px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  button:hover { background: #4a73ff; }
+</style>
+</head>
+<body>
+<h2>Problem 1 – Trajectory of Motion</h2>
+<p class="sub">m = 2 kg &nbsp;|&nbsp; F = (6, 2) N &nbsp;|&nbsp; v₀ = (1, −1) m/s &nbsp;|&nbsp; a = (3, 1) m/s²</p>
+<canvas id="c" width="680" height="480"></canvas>
+<div class="info">
+  <div class="badge">t = <span id="tval">0.00</span> s</div>
+  <div class="badge">x = <span id="xval">0.00</span> m</div>
+  <div class="badge">y = <span id="yval">0.00</span> m</div>
+  <div class="badge">|v| = <span id="vval">0.00</span> m/s</div>
+  <div class="badge">KE = <span id="keval">0.00</span> J</div>
+</div>
+<button id="btn">▶ Replay</button>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const m = 2, ax = 3, ay = 1, vx0 = 1, vy0 = -1;
+
+// Simulation from t=0 to t=3
+const dt = 0.01, tmax = 3.0;
+const pts = [];
+for(let t = 0; t <= tmax + 0.001; t += dt) {
+  const x = 0.5*ax*t*t + vx0*t;
+  const y = 0.5*ay*t*t + vy0*t;
+  pts.push({t, x, y});
+}
+
+// Find data bounds
+const xs = pts.map(p=>p.x), ys = pts.map(p=>p.y);
+const xmin = Math.min(...xs)-1, xmax = Math.max(...xs)+1;
+const ymin = Math.min(...ys)-1, ymax = Math.max(...ys)+1;
+const pad = 50;
+
+function toCanvas(x, y) {
+  return {
+    cx: pad + (x - xmin)/(xmax - xmin)*(W - 2*pad),
+    cy: H - pad - (y - ymin)/(ymax - ymin)*(H - 2*pad)
+  };
+}
+
+function drawAxes() {
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle = '#2a2d4a';
+  ctx.lineWidth = 1;
+  // Grid
+  for(let gx = Math.ceil(xmin); gx <= xmax; gx++) {
+    const {cx} = toCanvas(gx, 0);
+    ctx.beginPath(); ctx.moveTo(cx, pad); ctx.lineTo(cx, H-pad); ctx.stroke();
+    ctx.fillStyle='#555'; ctx.font='11px monospace'; ctx.textAlign='center';
+    ctx.fillText(gx, cx, H-pad+14);
+  }
+  for(let gy = Math.ceil(ymin); gy <= ymax; gy++) {
+    const {cy} = toCanvas(0, gy);
+    ctx.beginPath(); ctx.moveTo(pad, cy); ctx.lineTo(W-pad, cy); ctx.stroke();
+    ctx.fillStyle='#555'; ctx.font='11px monospace'; ctx.textAlign='right';
+    ctx.fillText(gy, pad-6, cy+4);
+  }
+  // Axes
+  const o0 = toCanvas(0, 0);
+  ctx.strokeStyle = '#3a3d5a'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(pad, o0.cy); ctx.lineTo(W-pad, o0.cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(o0.cx, pad); ctx.lineTo(o0.cx, H-pad); ctx.stroke();
+  ctx.fillStyle='#7eb8f7'; ctx.font='13px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('x (m)', W/2, H-8);
+  ctx.save(); ctx.translate(12, H/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText('y (m)', 0, 0); ctx.restore();
+}
+
+let frame = 0, animId;
+function animate() {
+  drawAxes();
+  // Draw full ghost path
+  ctx.beginPath();
+  ctx.strokeStyle = '#2a3060'; ctx.lineWidth = 1.5;
+  for(let i=0; i<pts.length; i++) {
+    const {cx,cy} = toCanvas(pts[i].x, pts[i].y);
+    i===0 ? ctx.moveTo(cx,cy) : ctx.lineTo(cx,cy);
+  }
+  ctx.stroke();
+
+  // Draw trail up to current frame
+  const trail = pts.slice(0, frame+1);
+  const grad = ctx.createLinearGradient(...(() => {
+    const s = toCanvas(pts[0].x, pts[0].y);
+    const e = toCanvas(pts[Math.min(frame,pts.length-1)].x, pts[Math.min(frame,pts.length-1)].y);
+    return [s.cx, s.cy, e.cx, e.cy];
+  })());
+  grad.addColorStop(0, '#2d5fff'); grad.addColorStop(1, '#7eb8f7');
+  ctx.beginPath(); ctx.strokeStyle = grad; ctx.lineWidth = 2.5;
+  for(let i=0; i<trail.length; i++) {
+    const {cx,cy} = toCanvas(trail[i].x, trail[i].y);
+    i===0 ? ctx.moveTo(cx,cy) : ctx.lineTo(cx,cy);
+  }
+  ctx.stroke();
+
+  // Start dot
+  const s0 = toCanvas(0,0);
+  ctx.beginPath(); ctx.arc(s0.cx, s0.cy, 6, 0, 2*Math.PI);
+  ctx.fillStyle='#4caf50'; ctx.fill();
+
+  // Current dot
+  const p = pts[Math.min(frame, pts.length-1)];
+  const {cx,cy} = toCanvas(p.x, p.y);
+  ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 2*Math.PI);
+  ctx.fillStyle='#ff8c42'; ctx.fill();
+  ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
+
+  // Velocity arrow
+  const vx = vx0 + ax*p.t, vy = vy0 + ay*p.t;
+  const vmag = Math.sqrt(vx*vx + vy*vy);
+  const scale = 10;
+  const ex = toCanvas(p.x + vx/scale, p.y + vy/scale);
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(ex.cx, ex.cy);
+  ctx.strokeStyle='#ffd740'; ctx.lineWidth=2; ctx.stroke();
+
+  // Labels
+  ctx.fillStyle='#4caf50'; ctx.font='12px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Start', s0.cx+10, s0.cy-8);
+
+  // Info
+  document.getElementById('tval').textContent = p.t.toFixed(2);
+  document.getElementById('xval').textContent = p.x.toFixed(2);
+  document.getElementById('yval').textContent = p.y.toFixed(2);
+  document.getElementById('vval').textContent = vmag.toFixed(2);
+  const ke = 0.5*m*vmag*vmag;
+  document.getElementById('keval').textContent = ke.toFixed(2);
+
+  frame++;
+  if(frame < pts.length) animId = requestAnimationFrame(animate);
+}
+
+function start() {
+  cancelAnimationFrame(animId); frame = 0;
+  animate();
+}
+document.getElementById('btn').addEventListener('click', start);
+start();
+</script>
+</body>
+</html>

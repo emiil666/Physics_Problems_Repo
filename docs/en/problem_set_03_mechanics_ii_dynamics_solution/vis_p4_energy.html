@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>P4 – Conservation of Energy</title>
+<style>
+  body { margin:0; background:#0f0f1a; color:#eee; font-family:'Segoe UI',sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  h2 { color:#7eb8f7; }
+  .wrap { display:flex; gap:24px; align-items:flex-start; }
+  canvas { background:#16182a; border:1px solid #2a2d4a; border-radius:8px; }
+  .controls { background:#1e2240; border-radius:8px; padding:14px 20px; margin:12px 0; display:flex; gap:20px; align-items:center; }
+  label { color:#aaa; font-size:13px; }
+  input[type=range] { width:110px; }
+  .val { color:#7eb8f7; font-weight:bold; }
+  button { background:#2d5fff; color:#fff; border:none; padding:7px 18px; border-radius:6px; cursor:pointer; }
+  button:hover { background:#4a73ff; }
+  .stats { background:#1e2240; border-radius:8px; padding:10px 18px; font-size:13px; line-height:1.9; }
+  .t { color:#4caf50; } .u { color:#ffd740; } .e { color:#7eb8f7; }
+</style>
+</head>
+<body>
+<h2>Problem 4 – Conservation of Energy (Free Fall)</h2>
+<div class="controls">
+  <label>h = <span class="val" id="hv">10</span> m
+    <input type="range" id="hslider" min="2" max="50" step="1" value="10">
+  </label>
+  <label>m = <span class="val" id="mv">1</span> kg
+    <input type="range" id="mslider" min="0.5" max="10" step="0.5" value="1">
+  </label>
+  <button id="btn">▶ Drop!</button>
+</div>
+<div class="wrap">
+  <canvas id="anim" width="200" height="480"></canvas>
+  <canvas id="plot" width="460" height="480"></canvas>
+  <div class="stats" id="stats"></div>
+</div>
+
+<script>
+const g = 9.81;
+let h = 10, m = 1;
+let animId, t = 0, running = false;
+
+const ac = document.getElementById('anim');
+const pc = document.getElementById('plot');
+const actx = ac.getContext('2d');
+const pctx = pc.getContext('2d');
+const AW = 200, AH = 480, PW = 460, PH = 480;
+const padP = 50;
+
+function updateParams() {
+  h = parseFloat(document.getElementById('hslider').value);
+  m = parseFloat(document.getElementById('mslider').value);
+  document.getElementById('hv').textContent = h;
+  document.getElementById('mv').textContent = m;
+}
+
+function drawAnim(y_cur) {
+  actx.clearRect(0,0,AW,AH);
+  // Ground
+  actx.fillStyle='#2a3060'; actx.fillRect(0, AH-40, AW, 40);
+  actx.fillStyle='#3a4080'; actx.font='12px sans-serif'; actx.textAlign='center';
+  actx.fillText('Ground (y=0)', AW/2, AH-18);
+  // Height scale
+  const topY = 30, botY = AH-40;
+  const pxPerM = (botY - topY) / h;
+  // Height arrow
+  actx.strokeStyle='#555'; actx.lineWidth=1; actx.setLineDash([4,3]);
+  actx.beginPath(); actx.moveTo(20, topY); actx.lineTo(20, botY); actx.stroke();
+  actx.setLineDash([]);
+  actx.fillStyle='#888'; actx.font='11px sans-serif'; actx.textAlign='left';
+  actx.fillText(`h=${h}m`, 4, topY+14);
+  // 25% line
+  const y25 = 0.25*h;
+  const py25 = botY - y25*pxPerM;
+  actx.strokeStyle='rgba(255,215,64,0.4)'; actx.lineWidth=1; actx.setLineDash([3,3]);
+  actx.beginPath(); actx.moveTo(30, py25); actx.lineTo(AW-10, py25); actx.stroke();
+  actx.setLineDash([]);
+  actx.fillStyle='rgba(255,215,64,0.7)'; actx.font='10px sans-serif';
+  actx.fillText('KE=75%', 32, py25-3);
+  // Ball
+  const ballY = botY - y_cur*pxPerM;
+  const v = Math.sqrt(2*g*(h - y_cur));
+  const KE = 0.5*m*v*v, PE = m*g*y_cur, E = m*g*h;
+  // Energy bar
+  const barX = 100, barW = 24, barH = botY - topY;
+  actx.fillStyle='#1e2240'; actx.fillRect(barX, topY, barW, barH);
+  actx.fillStyle='rgba(255,215,64,0.85)'; actx.fillRect(barX, topY + barH*(1 - PE/E), barW, barH*(PE/E));
+  actx.fillStyle='rgba(76,175,80,0.85)'; actx.fillRect(barX, topY + barH*(1 - (KE+PE)/E), barW, barH*(KE/E));
+  actx.strokeStyle='#3a3d5a'; actx.strokeRect(barX, topY, barW, barH);
+  actx.fillStyle='#aaa'; actx.font='10px sans-serif'; actx.textAlign='center';
+  actx.fillText('E bar', barX+barW/2, topY-6);
+  // Ball
+  const ballR = 14;
+  const grad = actx.createRadialGradient(barX-35, ballY-4, 2, barX-35, ballY, ballR);
+  grad.addColorStop(0, '#aaddff'); grad.addColorStop(1, '#2d5fff');
+  actx.beginPath(); actx.arc(barX-35, ballY, ballR, 0, 2*Math.PI);
+  actx.fillStyle = grad; actx.fill();
+  actx.strokeStyle='#7eb8f7'; actx.lineWidth=1.5; actx.stroke();
+  // Velocity arrow
+  if(v > 0.1) {
+    const arrowLen = Math.min(v*3, 60);
+    actx.beginPath(); actx.strokeStyle='#ffd740'; actx.lineWidth=2;
+    actx.moveTo(barX-35, ballY+ballR); actx.lineTo(barX-35, ballY+ballR+arrowLen); actx.stroke();
+    actx.fillStyle='#ffd740';
+    actx.beginPath(); actx.moveTo(barX-35-5, ballY+ballR+arrowLen-8); actx.lineTo(barX-35+5, ballY+ballR+arrowLen-8); actx.lineTo(barX-35, ballY+ballR+arrowLen+6); actx.fill();
+  }
+  // Stats
+  document.getElementById('stats').innerHTML =
+    `<b style="color:#7eb8f7">State</b><br>` +
+    `y = ${y_cur.toFixed(2)} m<br>` +
+    `v = ${v.toFixed(2)} m/s<br>` +
+    `<br><b>Energy</b><br>` +
+    `<span class="t">KE = ${KE.toFixed(2)} J</span><br>` +
+    `<span class="u">PE = ${PE.toFixed(2)} J</span><br>` +
+    `<span class="e">E  = ${E.toFixed(2)} J</span><br>` +
+    `<br>KE fraction:<br><b style="color:#4caf50">${(KE/E*100).toFixed(1)}%</b><br>` +
+    `<br>KE=75% at:<br><b style="color:#ffd740">y* = h/4 = ${(h/4).toFixed(2)} m</b>`;
+}
+
+function drawPlot(ycur) {
+  pctx.clearRect(0,0,PW,PH);
+  const E = m*g*h;
+  const ymin = -0.5, ymax = h+0.5;
+  const emin = -E*0.05, emax = E*1.1;
+  function toP(yv, ev) {
+    return {
+      px: padP + (yv - ymin)/(ymax - ymin)*(PW-2*padP),
+      py: PH - padP - (ev - emin)/(emax - emin)*(PH-2*padP)
+    };
+  }
+  // Axes
+  pctx.strokeStyle='#3a3d5a'; pctx.lineWidth=1.5;
+  const ox = toP(0, 0);
+  pctx.beginPath(); pctx.moveTo(padP, ox.py); pctx.lineTo(PW-padP, ox.py); pctx.stroke();
+  pctx.beginPath(); pctx.moveTo(ox.px, padP); pctx.lineTo(ox.px, PH-padP); pctx.stroke();
+  // Labels
+  pctx.fillStyle='#888'; pctx.font='12px sans-serif'; pctx.textAlign='center';
+  pctx.fillText('y (m) — Height', PW/2, PH-8);
+  pctx.save(); pctx.translate(14, PH/2); pctx.rotate(-Math.PI/2);
+  pctx.fillText('Energy (J)', 0, 0); pctx.restore();
+  pctx.fillStyle='#7eb8f7'; pctx.font='bold 13px sans-serif';
+  pctx.fillText('Energy vs Height', PW/2, 22);
+  // Grid
+  pctx.strokeStyle='#1e2040'; pctx.lineWidth=1;
+  for(let gy = 0; gy <= h; gy += Math.max(1, Math.floor(h/5))) {
+    const {px} = toP(gy, 0); const {py} = toP(0, 0);
+    pctx.beginPath(); pctx.moveTo(px, padP); pctx.lineTo(px, PH-padP); pctx.stroke();
+    pctx.fillStyle='#555'; pctx.font='10px monospace'; pctx.textAlign='center'; pctx.fillText(gy, px, PH-padP+14);
+  }
+  // Total E line
+  const etop = toP(ymin, E), eend = toP(ymax, E);
+  pctx.beginPath(); pctx.strokeStyle='#7eb8f7'; pctx.lineWidth=2; pctx.setLineDash([6,4]);
+  pctx.moveTo(etop.px, etop.py); pctx.lineTo(eend.px, eend.py); pctx.stroke();
+  pctx.setLineDash([]);
+  pctx.fillStyle='#7eb8f7'; pctx.font='11px sans-serif'; pctx.textAlign='left'; pctx.fillText('E (total)', eend.px-60, eend.py-6);
+  // PE = mgy curve
+  pctx.beginPath(); pctx.strokeStyle='#ffd740'; pctx.lineWidth=2.5;
+  for(let i=0; i<=100; i++) {
+    const yv = ymin + (ymax - ymin)*i/100;
+    const {px,py} = toP(yv, m*g*yv);
+    i===0 ? pctx.moveTo(px,py) : pctx.lineTo(px,py);
+  }
+  pctx.stroke();
+  pctx.fillStyle='#ffd740'; pctx.fillText('U = mgy', padP+8, padP+20);
+  // KE curve
+  pctx.beginPath(); pctx.strokeStyle='#4caf50'; pctx.lineWidth=2.5;
+  for(let i=0; i<=100; i++) {
+    const yv = ymax - (ymax - ymin)*i/100; // going down
+    const ke = E - m*g*yv;
+    if(ke < 0) continue;
+    const {px,py} = toP(yv, ke);
+    i===0 ? pctx.moveTo(px,py) : pctx.lineTo(px,py);
+  }
+  pctx.stroke();
+  pctx.fillStyle='#4caf50'; pctx.fillText('T = ½mv²', padP+8, PH-padP-16);
+  // 25% line
+  const p25 = toP(0.25*h, 0);
+  pctx.strokeStyle='rgba(255,215,64,0.5)'; pctx.lineWidth=1; pctx.setLineDash([3,3]);
+  pctx.beginPath(); pctx.moveTo(p25.px, padP); pctx.lineTo(p25.px, PH-padP); pctx.stroke();
+  pctx.setLineDash([]);
+  // Current y marker
+  if(ycur >= 0) {
+    const v = Math.sqrt(2*g*(h - ycur));
+    const KE = 0.5*m*v*v, PE = m*g*ycur;
+    const {px:px1, py:pye} = toP(ycur, PE);
+    const {py:pyk} = toP(ycur, KE);
+    pctx.beginPath(); pctx.arc(px1, pye, 7, 0, 2*Math.PI); pctx.fillStyle='#ffd740'; pctx.fill();
+    pctx.beginPath(); pctx.arc(px1, pyk, 7, 0, 2*Math.PI); pctx.fillStyle='#4caf50'; pctx.fill();
+  }
+}
+
+let tfall = 0, yfall = null;
+function drop() {
+  cancelAnimationFrame(animId);
+  tfall = 0;
+  updateParams();
+  yfall = h;
+  function frame() {
+    tfall += 0.016;
+    yfall = h - 0.5*g*tfall*tfall;
+    if(yfall <= 0) { yfall = 0; drawAnim(0); drawPlot(0); return; }
+    drawAnim(yfall); drawPlot(yfall);
+    animId = requestAnimationFrame(frame);
+  }
+  frame();
+}
+
+document.getElementById('btn').addEventListener('click', drop);
+document.getElementById('hslider').addEventListener('input', e => { document.getElementById('hv').textContent = e.target.value; drawAnim(parseFloat(e.target.value)); drawPlot(parseFloat(e.target.value)); });
+document.getElementById('mslider').addEventListener('input', e => { document.getElementById('mv').textContent = e.target.value; updateParams(); drawAnim(h); drawPlot(h); });
+
+updateParams(); drawAnim(h); drawPlot(h);
+</script>
+</body>
+</html>

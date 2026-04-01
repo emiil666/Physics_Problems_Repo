@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>P10 – Nonlinear Oscillator</title>
+<style>
+  body { margin:0; background:#0f0f1a; color:#eee; font-family:'Segoe UI',sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  h2 { color:#7eb8f7; font-size:18px; }
+  .controls { background:#1e2240; border-radius:8px; padding:12px 20px; margin:8px 0; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  label { color:#aaa; font-size:12px; display:flex; flex-direction:column; gap:2px; }
+  label b { color:#7eb8f7; font-size:13px; }
+  input[type=range] { width:100px; }
+  .row { display:flex; gap:16px; }
+  canvas { background:#16182a; border:1px solid #2a2d4a; border-radius:8px; }
+  button { background:#2d5fff; color:#fff; border:none; padding:7px 16px; border-radius:6px; cursor:pointer; font-size:13px; }
+  button:hover { background:#4a73ff; }
+  #info3 { background:#1e2240; border-radius:8px; padding:8px 18px; font-size:12px; color:#aaa; margin-top:8px; text-align:center; line-height:1.8; }
+  .preset-row { display:flex; gap:8px; margin:6px 0; }
+  .preset { background:#1e3060; color:#7eb8f7; border:1px solid #2a4090; padding:4px 12px; border-radius:5px; cursor:pointer; font-size:12px; }
+  .preset:hover { background:#2d4090; }
+</style>
+</head>
+<body>
+<h2>Problem 10 – Nonlinear Oscillator: U(x) = k/2·x² + λx⁴</h2>
+<div class="controls">
+  <label><b>k = <span id="kv">1.0</span></b> N/m² <input type="range" id="ks" min="-3" max="5" step="0.1" value="1"></label>
+  <label><b>λ = <span id="lv">0.1</span></b> N/m⁴ <input type="range" id="ls" min="-0.5" max="2" step="0.05" value="0.1"></label>
+  <label><b>m = <span id="mv">1.0</span></b> kg <input type="range" id="ms" min="0.1" max="5" step="0.1" value="1"></label>
+  <label><b>x₀ = <span id="xv">2.0</span></b> m <input type="range" id="xs" min="-4" max="4" step="0.1" value="2"></label>
+  <label><b>v₀ = <span id="vv">0.0</span></b> m/s <input type="range" id="vs" min="-5" max="5" step="0.1" value="0"></label>
+  <button id="runbtn">▶ Run</button>
+  <button id="clearbtn">🗑 Clear</button>
+</div>
+<div class="preset-row">
+  <span style="color:#888;font-size:12px;align-self:center;">Presets:</span>
+  <button class="preset" data-k="1" data-l="0" data-x="2" data-v="0">Harmonic (λ=0)</button>
+  <button class="preset" data-k="1" data-l="0.3" data-x="2" data-v="0">Anharmonic +</button>
+  <button class="preset" data-k="1" data-l="-0.1" data-x="1" data-v="0">Soft spring</button>
+  <button class="preset" data-k="-1" data-l="0.2" data-x="0.5" data-v="0">Double well (low E)</button>
+  <button class="preset" data-k="-1" data-l="0.2" data-x="3" data-v="0">Double well (high E)</button>
+</div>
+<div class="row">
+  <canvas id="pot" width="340" height="340"></canvas>
+  <canvas id="xt" width="380" height="340"></canvas>
+  <canvas id="ph" width="340" height="340"></canvas>
+</div>
+<div id="info3"></div>
+
+<script>
+let k=1, lam=0.1, m=1, x0=2, v0_ic=0;
+let trails = []; // each: [{x,v}]
+let colors = ['#7eb8f7','#ff6b6b','#4caf50','#ffd740','#ff8c42'];
+const W1=340, H1=340, W2=380, H2=340, pad=44;
+
+function getP() {
+  k = parseFloat(document.getElementById('ks').value);
+  lam = parseFloat(document.getElementById('ls').value);
+  m = parseFloat(document.getElementById('ms').value);
+  x0 = parseFloat(document.getElementById('xs').value);
+  v0_ic = parseFloat(document.getElementById('vs').value);
+  document.getElementById('kv').textContent = k.toFixed(1);
+  document.getElementById('lv').textContent = lam.toFixed(2);
+  document.getElementById('mv').textContent = m.toFixed(1);
+  document.getElementById('xv').textContent = x0.toFixed(1);
+  document.getElementById('vv').textContent = v0_ic.toFixed(1);
+}
+
+function U(x) { return 0.5*k*x*x + lam*x*x*x*x; }
+function F(x) { return -k*x - 4*lam*x*x*x; }
+function E_sys(x, v) { return 0.5*m*v*v + U(x); }
+
+// RK4 integration
+function rk4Step(x, v, dt) {
+  const acc = (xv, vv) => F(xv)/m;
+  const k1x = v, k1v = acc(x, v);
+  const k2x = v + 0.5*dt*k1v, k2v = acc(x+0.5*dt*k1x, v+0.5*dt*k1v);
+  const k3x = v + 0.5*dt*k2v, k3v = acc(x+0.5*dt*k2x, v+0.5*dt*k2v);
+  const k4x = v + dt*k3v, k4v = acc(x+dt*k3x, v+dt*k3v);
+  return {
+    x: x + dt*(k1x + 2*k2x + 2*k3x + k4x)/6,
+    v: v + dt*(k1v + 2*k2v + 2*k3v + k4v)/6
+  };
+}
+
+function simulate(x0, v0) {
+  const dt = 0.01, steps = 2000;
+  const pts = [{x:x0, v:v0}];
+  let xv=x0, vv=v0;
+  for(let i=1; i<steps; i++) {
+    const n = rk4Step(xv, vv, dt);
+    xv = n.x; vv = n.v;
+    if(!isFinite(xv) || Math.abs(xv) > 50) break;
+    pts.push({x:xv, v:vv});
+  }
+  return pts;
+}
+
+function drawPotential(xrange) {
+  const c = document.getElementById('pot').getContext('2d');
+  c.clearRect(0,0,W1,H1);
+  c.fillStyle='#7eb8f7'; c.font='bold 12px sans-serif'; c.textAlign='center';
+  c.fillText('U(x) = k/2·x² + λx⁴', W1/2, 18);
+  // Find U range
+  const xs = [];
+  for(let i=0;i<=100;i++) xs.push(-xrange + 2*xrange*i/100);
+  const us = xs.map(U);
+  const umin = Math.min(...us), umax = Math.max(...us);
+  const span = umax - umin || 1;
+  function toC(xv, uv) {
+    return {
+      cx: pad + (xv+xrange)/(2*xrange)*(W1-2*pad),
+      cy: H1-pad - (uv-umin)/span*(H1-2*pad)
+    };
+  }
+  // Axes
+  const o = toC(0, 0);
+  c.strokeStyle='#3a3d5a'; c.lineWidth=1.5;
+  c.beginPath(); c.moveTo(pad, o.cy); c.lineTo(W1-pad, o.cy); c.stroke();
+  c.beginPath(); c.moveTo(o.cx, pad); c.lineTo(o.cx, H1-pad); c.stroke();
+  c.fillStyle='#888'; c.font='11px sans-serif'; c.fillText('x (m)', W1/2, H1-5);
+  c.save(); c.translate(12, H1/2); c.rotate(-Math.PI/2); c.fillText('U (J)', 0, 0); c.restore();
+  // U curve
+  c.beginPath(); c.strokeStyle='#ffd740'; c.lineWidth=2.5;
+  xs.forEach((xv, i) => {
+    const {cx,cy} = toC(xv, U(xv));
+    i===0 ? c.moveTo(cx,cy) : c.lineTo(cx,cy);
+  });
+  c.stroke();
+  // Energy levels for each trail
+  trails.forEach((trail, ti) => {
+    if(!trail.length) return;
+    const E = E_sys(trail[0].x, trail[0].v);
+    const {cy:ecy} = toC(0, E);
+    if(ecy >= pad && ecy <= H1-pad) {
+      c.strokeStyle=colors[ti%colors.length]; c.lineWidth=1; c.setLineDash([4,4]);
+      c.beginPath(); c.moveTo(pad, ecy); c.lineTo(W1-pad, ecy); c.stroke();
+      c.setLineDash([]);
+      c.fillStyle=colors[ti%colors.length]; c.font='10px sans-serif'; c.textAlign='right';
+      c.fillText(`E${ti+1}=${E.toFixed(2)}J`, W1-pad-2, ecy-3);
+    }
+    // Current x on U curve
+    const last = trail[trail.length-1];
+    const {cx:pcx, cy:pcy} = toC(last.x, U(last.x));
+    c.beginPath(); c.arc(pcx, pcy, 6, 0, 2*Math.PI);
+    c.fillStyle=colors[ti%colors.length]; c.fill();
+  });
+  // Tick marks
+  c.fillStyle='#555'; c.font='10px mono'; c.textAlign='center';
+  [-xrange, -xrange/2, 0, xrange/2, xrange].forEach(xv => {
+    const {cx} = toC(xv, umin);
+    c.fillText(xv.toFixed(1), cx, H1-pad+13);
+  });
+}
+
+function drawXT() {
+  const c = document.getElementById('xt').getContext('2d');
+  c.clearRect(0,0,W2,H2);
+  c.fillStyle='#7eb8f7'; c.font='bold 12px sans-serif'; c.textAlign='center';
+  c.fillText('x(t) — Displacement vs Time', W2/2, 18);
+  if(!trails.length) return;
+  const tmax = (trails[0].length-1)*0.01;
+  // x range
+  let xmin_all = Infinity, xmax_all = -Infinity;
+  trails.forEach(tr => tr.forEach(p => { xmin_all=Math.min(xmin_all,p.x); xmax_all=Math.max(xmax_all,p.x); }));
+  const xspan = Math.max(xmax_all - xmin_all, 0.5);
+  xmin_all -= xspan*0.1; xmax_all += xspan*0.1;
+  function toC(tv, xv) {
+    return { cx: pad+tv/tmax*(W2-2*pad), cy: H2-pad-(xv-xmin_all)/xspan*(H2-2*pad) };
+  }
+  // Axes
+  const o = toC(0, 0);
+  c.strokeStyle='#3a3d5a'; c.lineWidth=1.5;
+  c.beginPath(); c.moveTo(pad, o.cy); c.lineTo(W2-pad, o.cy); c.stroke();
+  c.beginPath(); c.moveTo(o.cx, pad); c.lineTo(o.cx, H2-pad); c.stroke();
+  c.fillStyle='#888'; c.font='11px sans-serif'; c.fillText('t (s)', W2/2, H2-5);
+  c.save(); c.translate(12, H2/2); c.rotate(-Math.PI/2); c.fillText('x (m)', 0, 0); c.restore();
+  // Tick t
+  for(let i=0;i<=4;i++) { const {cx}=toC(tmax*i/4,0); c.fillStyle='#555'; c.font='10px mono'; c.textAlign='center'; c.fillText((tmax*i/4).toFixed(1), cx, H2-pad+13); }
+  // Trails
+  trails.forEach((trail, ti) => {
+    c.beginPath(); c.strokeStyle=colors[ti%colors.length]; c.lineWidth=2;
+    trail.forEach((p,i) => {
+      const {cx,cy} = toC(i*0.01, p.x);
+      i===0 ? c.moveTo(cx,cy) : c.lineTo(cx,cy);
+    });
+    c.stroke();
+  });
+}
+
+function drawPhase() {
+  const c = document.getElementById('ph').getContext('2d');
+  c.clearRect(0,0,W1,H1);
+  c.fillStyle='#7eb8f7'; c.font='bold 12px sans-serif'; c.textAlign='center';
+  c.fillText('Phase Portrait (x, v)', W1/2, 18);
+  if(!trails.length) return;
+  let xmin_all=Infinity, xmax_all=-Infinity, vmin_all=Infinity, vmax_all=-Infinity;
+  trails.forEach(tr => tr.forEach(p => {
+    xmin_all=Math.min(xmin_all,p.x); xmax_all=Math.max(xmax_all,p.x);
+    vmin_all=Math.min(vmin_all,p.v); vmax_all=Math.max(vmax_all,p.v);
+  }));
+  const xspan = Math.max(xmax_all-xmin_all, 0.5);
+  const vspan = Math.max(vmax_all-vmin_all, 0.5);
+  xmin_all-=xspan*0.1; xmax_all+=xspan*0.1;
+  vmin_all-=vspan*0.1; vmax_all+=vspan*0.1;
+  function toC(xv, vv) {
+    return {
+      cx: pad+(xv-xmin_all)/(xmax_all-xmin_all)*(W1-2*pad),
+      cy: H1-pad-(vv-vmin_all)/(vmax_all-vmin_all)*(H1-2*pad)
+    };
+  }
+  const o = toC(0,0);
+  if(o.cx>=pad && o.cx<=W1-pad) { c.strokeStyle='#3a3d5a'; c.lineWidth=1.5; c.beginPath(); c.moveTo(o.cx,pad); c.lineTo(o.cx,H1-pad); c.stroke(); }
+  if(o.cy>=pad && o.cy<=H1-pad) { c.strokeStyle='#3a3d5a'; c.lineWidth=1.5; c.beginPath(); c.moveTo(pad,o.cy); c.lineTo(W1-pad,o.cy); c.stroke(); }
+  c.fillStyle='#888'; c.font='11px sans-serif'; c.fillText('x (m)', W1/2, H1-5);
+  c.save(); c.translate(12, H1/2); c.rotate(-Math.PI/2); c.fillText('v (m/s)', 0, 0); c.restore();
+  trails.forEach((trail, ti) => {
+    c.beginPath(); c.strokeStyle=colors[ti%colors.length]; c.lineWidth=1.5;
+    trail.forEach((p,i) => {
+      const {cx,cy} = toC(p.x, p.v);
+      i===0 ? c.moveTo(cx,cy) : c.lineTo(cx,cy);
+    });
+    c.stroke();
+    // Dot at current position
+    if(trail.length > 0) {
+      const last = trail[trail.length-1];
+      const {cx,cy} = toC(last.x, last.v);
+      c.beginPath(); c.arc(cx,cy,6,0,2*Math.PI); c.fillStyle=colors[ti%colors.length]; c.fill();
+    }
+  });
+}
+
+function updateInfo() {
+  let html = `<b>U(x) = k/2·x² + λx⁴</b> with k=${k.toFixed(1)}, λ=${lam.toFixed(2)}, m=${m.toFixed(1)}<br>`;
+  html += `F(x) = −kx − 4λx³ &nbsp;|&nbsp; `;
+  if(k > 0 && lam >= 0) html += `<span style="color:#4caf50">Anharmonic oscillator (stable)</span>`;
+  else if(k < 0 && lam > 0) html += `<span style="color:#ffd740">Double-well potential (bistable) — barrier at x=±${Math.sqrt(-k/(4*lam)).toFixed(3)} m</span>`;
+  else if(k > 0 && lam < 0) html += `<span style="color:#ff6b6b">Soft spring — may escape</span>`;
+  else html += `Nonlinear system`;
+  html += `<br>`;
+  trails.forEach((tr,i) => {
+    if(tr.length) {
+      const E = E_sys(tr[0].x, tr[0].v);
+      html += `<span style="color:${colors[i%colors.length]}">Trail ${i+1}: E=${E.toFixed(3)} J</span> &nbsp;`;
+    }
+  });
+  document.getElementById('info3').innerHTML = html;
+}
+
+function drawAll() {
+  const xrange = Math.max(5, ...trails.flatMap(tr => tr.map(p => Math.abs(p.x))) || [5]);
+  drawPotential(Math.min(xrange+1, 8));
+  drawXT(); drawPhase(); updateInfo();
+}
+
+document.getElementById('runbtn').addEventListener('click', () => {
+  getP();
+  if(trails.length >= colors.length) trails.shift();
+  const pts = simulate(x0, v0_ic);
+  trails.push(pts);
+  drawAll();
+});
+document.getElementById('clearbtn').addEventListener('click', () => { trails=[]; drawAll(); });
+
+document.querySelectorAll('.preset').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('ks').value = btn.dataset.k;
+    document.getElementById('ls').value = btn.dataset.l;
+    document.getElementById('xs').value = btn.dataset.x;
+    document.getElementById('vs').value = btn.dataset.v || 0;
+    getP();
+    trails = [];
+    const pts = simulate(x0, v0_ic);
+    trails.push(pts);
+    drawAll();
+  });
+});
+
+// Initial draw with default params
+getP();
+const pts = simulate(x0, v0_ic);
+trails.push(pts);
+drawAll();
+</script>
+</body>
+</html>

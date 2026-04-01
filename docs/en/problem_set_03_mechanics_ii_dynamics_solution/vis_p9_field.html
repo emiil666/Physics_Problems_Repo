@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>P9 – 2D Conservative Field</title>
+<style>
+  body { margin:0; background:#0f0f1a; color:#eee; font-family:'Segoe UI',sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  h2 { color:#7eb8f7; }
+  .row { display:flex; gap:20px; align-items:flex-start; }
+  canvas { background:#16182a; border:1px solid #2a2d4a; border-radius:8px; }
+  .controls { background:#1e2240; border-radius:8px; padding:12px 20px; margin:10px 0; display:flex; gap:20px; align-items:center; flex-wrap:wrap; }
+  label { color:#aaa; font-size:13px; }
+  input[type=range] { width:100px; }
+  .val { color:#7eb8f7; font-weight:bold; }
+  button { background:#2d5fff; color:#fff; border:none; padding:7px 16px; border-radius:6px; cursor:pointer; }
+  .legend { font-size:12px; line-height:2; }
+  .dot { width:12px; height:12px; display:inline-block; border-radius:50%; margin-right:6px; vertical-align:middle; }
+</style>
+</head>
+<body>
+<h2>Problem 9 – U(x,y) = k/2·(x²+y²) — 2D Conservative Field</h2>
+<div class="controls">
+  <label>k = <span class="val" id="kv">1</span> N/m <input type="range" id="ks" min="0.2" max="4" step="0.1" value="1"></label>
+  <label>Aₓ = <span class="val" id="axv">2</span> m <input type="range" id="axs" min="0.2" max="4" step="0.1" value="2"></label>
+  <label>Ay = <span class="val" id="ayv">1.5</span> m <input type="range" id="ays" min="0.2" max="4" step="0.1" value="1.5"></label>
+  <label>φ = <span class="val" id="phv">0</span>° <input type="range" id="phs" min="0" max="90" step="5" value="0"></label>
+  <button id="btn">⏸ Pause</button>
+</div>
+<div class="row">
+  <canvas id="field" width="500" height="500"></canvas>
+  <div>
+    <canvas id="energy" width="320" height="240"></canvas>
+    <div class="legend" style="margin-top:10px; background:#1e2240; border-radius:8px; padding:12px 16px;">
+      <div><span class="dot" style="background:#3a7aff;opacity:.7"></span>Equipotentials U=const</div>
+      <div><span class="dot" style="background:#ffd740"></span>Force field vectors</div>
+      <div><span class="dot" style="background:#ff6b6b"></span>Trajectory (ellipse/circle)</div>
+      <div><span class="dot" style="background:#4caf50"></span>Current position</div>
+      <div id="einfo" style="margin-top:8px; font-size:12px; color:#aaa; line-height:1.8;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let k=1, Ax=2, Ay=1.5, phi=0, running=true, t=0, animId;
+const FC = document.getElementById('field').getContext('2d');
+const EC = document.getElementById('energy').getContext('2d');
+const FW=500, FH=500, EW=320, EH=240;
+const RANGE = 5, pad=40;
+
+function getP() {
+  k = parseFloat(document.getElementById('ks').value);
+  Ax = parseFloat(document.getElementById('axs').value);
+  Ay = parseFloat(document.getElementById('ays').value);
+  phi = parseFloat(document.getElementById('phs').value)*Math.PI/180;
+  document.getElementById('kv').textContent = k.toFixed(1);
+  document.getElementById('axv').textContent = Ax.toFixed(1);
+  document.getElementById('ayv').textContent = Ay.toFixed(1);
+  document.getElementById('phv').textContent = parseFloat(document.getElementById('phs').value);
+}
+
+const w0 = () => Math.sqrt(k/1); // m=1
+
+function worldToCanvas(x, y) {
+  return {
+    cx: pad + (x + RANGE)/(2*RANGE)*(FW - 2*pad),
+    cy: FH - pad - (y + RANGE)/(2*RANGE)*(FH - 2*pad)
+  };
+}
+
+function drawField(t_cur) {
+  getP();
+  const W0 = w0();
+  FC.clearRect(0,0,FW,FH);
+  // Title
+  FC.fillStyle='#7eb8f7'; FC.font='bold 13px sans-serif'; FC.textAlign='center';
+  FC.fillText('Field: F = −k·r, Equipotentials: U = k/2·r²', FW/2, 20);
+  // Draw equipotential circles (filled, color coded)
+  const num_eq = 7;
+  for(let n = num_eq; n >= 1; n--) {
+    const U = 0.5*k*(RANGE*n/num_eq)**2;
+    const r = Math.sqrt(2*U/k);
+    const {cx: ox, cy: oy} = worldToCanvas(0,0);
+    const r_px = r/(2*RANGE)*(FW-2*pad);
+    const alpha = 0.07 + 0.04*(num_eq-n);
+    FC.beginPath(); FC.arc(ox, oy, r_px, 0, 2*Math.PI);
+    FC.fillStyle = `rgba(58,122,255,${alpha})`; FC.fill();
+    FC.strokeStyle = `rgba(100,160,255,0.35)`; FC.lineWidth=1;
+    FC.stroke();
+  }
+  // Axes
+  const o = worldToCanvas(0,0);
+  FC.strokeStyle='#3a3d5a'; FC.lineWidth=1.5;
+  FC.beginPath(); FC.moveTo(pad, o.cy); FC.lineTo(FW-pad, o.cy); FC.stroke();
+  FC.beginPath(); FC.moveTo(o.cx, pad); FC.lineTo(o.cx, FH-pad); FC.stroke();
+  FC.fillStyle='#555'; FC.font='11px sans-serif'; FC.textAlign='center';
+  [-4,-2,0,2,4].forEach(v => {
+    if(v !== 0) {
+      const {cx} = worldToCanvas(v, 0); FC.fillText(v, cx, o.cy+16);
+      const {cy} = worldToCanvas(0, v); FC.textAlign='right'; FC.fillText(v, o.cx-6, cy+4); FC.textAlign='center';
+    }
+  });
+  FC.fillStyle='#888'; FC.fillText('x (m)', FW/2, FH-6);
+  FC.save(); FC.translate(12, FH/2); FC.rotate(-Math.PI/2); FC.fillText('y (m)', 0, 0); FC.restore();
+  // Force vectors (arrows on grid)
+  const nArrows = 10;
+  for(let i=0; i<=nArrows; i++) {
+    for(let j=0; j<=nArrows; j++) {
+      const x = -RANGE + 2*RANGE*i/nArrows;
+      const y = -RANGE + 2*RANGE*j/nArrows;
+      const fx = -k*x, fy = -k*y;
+      const fmag = Math.sqrt(fx*fx + fy*fy);
+      if(fmag < 0.01) continue;
+      const scale = 0.18*RANGE/num_eq;
+      const ex = x + fx/fmag*scale, ey = y + fy/fmag*scale;
+      const {cx:x1,cy:y1} = worldToCanvas(x, y);
+      const {cx:x2,cy:y2} = worldToCanvas(ex, ey);
+      const alpha = Math.min(0.9, fmag/(k*RANGE));
+      FC.beginPath(); FC.moveTo(x1,y1); FC.lineTo(x2,y2);
+      FC.strokeStyle=`rgba(255,215,64,${alpha*0.7})`; FC.lineWidth=1; FC.stroke();
+      // Arrowhead
+      const ang = Math.atan2(y2-y1, x2-x1);
+      FC.beginPath();
+      FC.moveTo(x2, y2);
+      FC.lineTo(x2-5*Math.cos(ang-0.4), y2-5*Math.sin(ang-0.4));
+      FC.lineTo(x2-5*Math.cos(ang+0.4), y2-5*Math.sin(ang+0.4));
+      FC.closePath();
+      FC.fillStyle=`rgba(255,215,64,${alpha*0.7})`; FC.fill();
+    }
+  }
+  // Trajectory ellipse
+  FC.beginPath(); FC.strokeStyle='#ff6b6b'; FC.lineWidth=2.5;
+  const steps = 400;
+  for(let i=0; i<=steps; i++) {
+    const angle = 2*Math.PI*i/steps;
+    const xv = Ax*Math.cos(angle + phi);
+    const yv = Ay*Math.sin(angle);
+    const {cx,cy} = worldToCanvas(xv, yv);
+    i===0 ? FC.moveTo(cx,cy) : FC.lineTo(cx,cy);
+  }
+  FC.closePath(); FC.stroke();
+  // Current position
+  const x_cur = Ax*Math.cos(W0*t_cur + phi);
+  const y_cur = Ay*Math.sin(W0*t_cur);
+  const {cx:pcx, cy:pcy} = worldToCanvas(x_cur, y_cur);
+  // Velocity arrow
+  const vx = -Ax*W0*Math.sin(W0*t_cur + phi);
+  const vy = Ay*W0*Math.cos(W0*t_cur);
+  const vmag = Math.sqrt(vx*vx + vy*vy);
+  if(vmag > 0.01) {
+    const escale = 0.3;
+    const {cx:ecx, cy:ecy} = worldToCanvas(x_cur + vx*escale, y_cur + vy*escale);
+    FC.beginPath(); FC.moveTo(pcx,pcy); FC.lineTo(ecx,ecy);
+    FC.strokeStyle='#4caf50'; FC.lineWidth=2; FC.stroke();
+  }
+  FC.beginPath(); FC.arc(pcx, pcy, 9, 0, 2*Math.PI);
+  FC.fillStyle='#4caf50'; FC.fill(); FC.strokeStyle='#fff'; FC.lineWidth=2; FC.stroke();
+  // Energy info
+  const U = 0.5*k*(x_cur**2 + y_cur**2);
+  const KE = 0.5*(vx**2 + vy**2); // m=1
+  const E_total = 0.5*k*(Ax**2 + Ay**2)/2 + 0.5*k*(Ax**2 + Ay**2)/2;
+  document.getElementById('einfo').innerHTML =
+    `x = ${x_cur.toFixed(3)} m, y = ${y_cur.toFixed(3)} m<br>` +
+    `U = ${U.toFixed(3)} J &nbsp; KE = ${KE.toFixed(3)} J<br>` +
+    `E_total = ½k(Ax²+Ay²) = <b style="color:#7eb8f7">${(0.5*k*(Ax**2+Ay**2)).toFixed(3)} J</b><br>` +
+    `ω₀ = √(k/m) = ${W0.toFixed(3)} rad/s`;
+  // Draw energy bars
+  drawEnergyBars(U, KE, 0.5*k*(Ax**2+Ay**2));
+}
+
+function drawEnergyBars(U, KE, E) {
+  EC.clearRect(0,0,EW,EH);
+  EC.fillStyle='#7eb8f7'; EC.font='bold 12px sans-serif'; EC.textAlign='center';
+  EC.fillText('Energy Breakdown', EW/2, 18);
+  const barH = 30, gap=14, x0=60, barMaxW=EW-80;
+  [
+    {label:'KE', val:KE, color:'#4caf50'},
+    {label:'PE', val:U, color:'#ffd740'},
+    {label:'Total', val:E, color:'#7eb8f7'}
+  ].forEach(({label, val, color}, i) => {
+    const y = 36 + i*(barH+gap);
+    EC.fillStyle='#2a3060'; EC.fillRect(x0, y, barMaxW, barH);
+    const w = Math.min(barMaxW, val/E*barMaxW);
+    EC.fillStyle=color; EC.fillRect(x0, y, w, barH);
+    EC.fillStyle='#eee'; EC.font='11px sans-serif'; EC.textAlign='right'; EC.fillText(label, x0-6, y+barH/2+4);
+    EC.textAlign='left'; EC.fillText(`${val.toFixed(3)} J`, x0+w+4, y+barH/2+4);
+  });
+}
+
+function anim() {
+  if(!running) return;
+  t += 0.025;
+  drawField(t);
+  animId = requestAnimationFrame(anim);
+}
+
+document.getElementById('btn').addEventListener('click', () => {
+  running = !running;
+  document.getElementById('btn').textContent = running ? '⏸ Pause' : '▶ Resume';
+  if(running) anim();
+});
+['ks','axs','ays','phs'].forEach(id => document.getElementById(id).addEventListener('input', () => { getP(); drawField(t); }));
+anim();
+</script>
+</body>
+</html>

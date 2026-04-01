@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>P8 – Harmonic Oscillator</title>
+<style>
+  body { margin:0; background:#0f0f1a; color:#eee; font-family:'Segoe UI',sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  h2 { color:#7eb8f7; }
+  .row { display:flex; gap:20px; }
+  canvas { background:#16182a; border:1px solid #2a2d4a; border-radius:8px; }
+  .controls { background:#1e2240; border-radius:8px; padding:12px 20px; margin:10px 0; display:flex; gap:20px; align-items:center; flex-wrap:wrap; }
+  label { color:#aaa; font-size:13px; }
+  input[type=range] { width:100px; }
+  .val { color:#7eb8f7; font-weight:bold; }
+  button { background:#2d5fff; color:#fff; border:none; padding:7px 16px; border-radius:6px; cursor:pointer; }
+  .info2 { display:flex; gap:16px; margin:8px 0; font-size:13px; flex-wrap:wrap; }
+  .badge2 { background:#1e2240; border-radius:6px; padding:5px 14px; }
+  .badge2 b { color:#7eb8f7; }
+</style>
+</head>
+<body>
+<h2>Problem 8 – Harmonic Oscillator & Phase Space</h2>
+<div class="controls">
+  <label>A (amplitude) = <span class="val" id="av">2</span> m <input type="range" id="as" min="0.5" max="5" step="0.1" value="2"></label>
+  <label>ω₀ = <span class="val" id="wv">2</span> rad/s <input type="range" id="ws" min="0.5" max="6" step="0.1" value="2"></label>
+  <label>m = <span class="val" id="mv">1</span> kg <input type="range" id="ms" min="0.5" max="5" step="0.5" value="1"></label>
+  <button id="btn">⏸ Pause</button>
+</div>
+<div class="row">
+  <canvas id="xt" width="440" height="320"></canvas>
+  <canvas id="ph" width="360" height="320"></canvas>
+</div>
+<div class="info2" id="info2"></div>
+
+<script>
+let A=2, w0=2, mass=1, running=true, animId, t=0;
+const W1=440, H1=320, W2=360, H2=320, pad=46;
+
+function getP() {
+  A = parseFloat(document.getElementById('as').value);
+  w0 = parseFloat(document.getElementById('ws').value);
+  mass = parseFloat(document.getElementById('ms').value);
+  document.getElementById('av').textContent = A.toFixed(1);
+  document.getElementById('wv').textContent = w0.toFixed(1);
+  document.getElementById('mv').textContent = mass;
+}
+
+const xc = document.getElementById('xt').getContext('2d');
+const pc = document.getElementById('ph').getContext('2d');
+
+function drawXT(t_cur) {
+  const k = mass*w0*w0;
+  const T = 2*Math.PI/w0;
+  const tmax = 3*T;
+  const xmax = A*1.2, xmin = -A*1.2;
+  function toCxt(tv, xv) {
+    return { cx: pad + tv/tmax*(W1-2*pad), cy: H1-pad-(xv-xmin)/(xmax-xmin)*(H1-2*pad) };
+  }
+  xc.clearRect(0,0,W1,H1);
+  xc.fillStyle='#7eb8f7'; xc.font='bold 13px sans-serif'; xc.textAlign='center';
+  xc.fillText('x(t), T(t), U(t) — Motion & Energy', W1/2, 20);
+  // Axes
+  const o = toCxt(0, 0);
+  xc.strokeStyle='#3a3d5a'; xc.lineWidth=1.5;
+  xc.beginPath(); xc.moveTo(pad, o.cy); xc.lineTo(W1-pad, o.cy); xc.stroke();
+  xc.beginPath(); xc.moveTo(o.cx, pad); xc.lineTo(o.cx, H1-pad); xc.stroke();
+  // Period ticks
+  for(let n=0; n<=3; n++) {
+    const {cx} = toCxt(n*T, 0);
+    xc.strokeStyle='#2a3060'; xc.lineWidth=1;
+    xc.beginPath(); xc.moveTo(cx, pad); xc.lineTo(cx, H1-pad); xc.stroke();
+    xc.fillStyle='#555'; xc.font='10px mono'; xc.textAlign='center'; xc.fillText(`${n}T`, cx, H1-pad+13);
+  }
+  // x(t) — position
+  xc.beginPath(); xc.strokeStyle='#7eb8f7'; xc.lineWidth=2.5;
+  for(let i=0;i<=400;i++) {
+    const t = tmax*i/400;
+    const x = A*Math.cos(w0*t);
+    const {cx,cy} = toCxt(t, x);
+    i===0 ? xc.moveTo(cx,cy) : xc.lineTo(cx,cy);
+  }
+  xc.stroke();
+  // E_total line scaled to x-axis
+  const E = 0.5*k*A*A;
+  // Energy scaled: T(t)/E*A and U(t)/E*A, shown scaled
+  const scale_e = A;
+  xc.beginPath(); xc.strokeStyle='#4caf50'; xc.lineWidth=1.5; xc.setLineDash([3,3]);
+  for(let i=0;i<=400;i++) {
+    const t = tmax*i/400;
+    const ke = 0.5*k*A*A*Math.sin(w0*t)*Math.sin(w0*t);
+    const {cx,cy} = toCxt(t, (ke/E)*scale_e - scale_e*0.0);
+    i===0 ? xc.moveTo(cx,cy) : xc.lineTo(cx,cy);
+  }
+  xc.stroke();
+  xc.beginPath(); xc.strokeStyle='#ffd740'; xc.lineWidth=1.5;
+  for(let i=0;i<=400;i++) {
+    const t = tmax*i/400;
+    const ue = 0.5*k*A*A*Math.cos(w0*t)*Math.cos(w0*t);
+    const {cx,cy} = toCxt(t, (ue/E)*scale_e*0.8);
+    i===0 ? xc.moveTo(cx,cy) : xc.lineTo(cx,cy);
+  }
+  xc.stroke(); xc.setLineDash([]);
+  // Legend
+  xc.fillStyle='#7eb8f7'; xc.font='11px sans-serif'; xc.textAlign='left'; xc.fillText('x(t)', pad+4, pad+20);
+  xc.fillStyle='#4caf50'; xc.fillText('T(t)∝', pad+4, pad+34);
+  xc.fillStyle='#ffd740'; xc.fillText('U(t)∝', pad+54, pad+34);
+  // Current position marker
+  const x_cur = A*Math.cos(w0*t_cur % tmax);
+  const t_plot = t_cur % tmax;
+  const {cx:ccx, cy:ccy} = toCxt(t_plot, x_cur);
+  xc.beginPath(); xc.arc(ccx, ccy, 7, 0, 2*Math.PI); xc.fillStyle='#ff8c42'; xc.fill();
+  xc.strokeStyle='#fff'; xc.lineWidth=1.5; xc.stroke();
+  xc.fillStyle='#888'; xc.font='12px sans-serif'; xc.textAlign='center'; xc.fillText('t (periods)', W1/2, H1-6);
+}
+
+function drawPhase(t_cur) {
+  const k = mass*w0*w0;
+  const pmax = mass*w0*A*1.2, pmin = -mass*w0*A*1.2;
+  const xmax = A*1.2, xmin = -A*1.2;
+  function toPC(xv, pv) {
+    return { cx: pad+(xv-xmin)/(xmax-xmin)*(W2-2*pad), cy: H2-pad-(pv-pmin)/(pmax-pmin)*(H2-2*pad) };
+  }
+  pc.clearRect(0,0,W2,H2);
+  pc.fillStyle='#7eb8f7'; pc.font='bold 13px sans-serif'; pc.textAlign='center';
+  pc.fillText('Phase Space (x, p)', W2/2, 20);
+  // Axes
+  const o = toPC(0, 0);
+  pc.strokeStyle='#3a3d5a'; pc.lineWidth=1.5;
+  pc.beginPath(); pc.moveTo(pad, o.cy); pc.lineTo(W2-pad, o.cy); pc.stroke();
+  pc.beginPath(); pc.moveTo(o.cx, pad); pc.lineTo(o.cx, H2-pad); pc.stroke();
+  pc.fillStyle='#888'; pc.font='12px sans-serif'; pc.textAlign='center'; pc.fillText('x (m)', W2/2, H2-6);
+  pc.save(); pc.translate(12, H2/2); pc.rotate(-Math.PI/2); pc.fillText('p = mv (kg·m/s)', 0, 0); pc.restore();
+  // Ellipse (full orbit)
+  pc.beginPath(); pc.strokeStyle='rgba(126,184,247,0.3)'; pc.lineWidth=1.5;
+  for(let i=0;i<=360;i++) {
+    const angle = i*Math.PI/180;
+    const xv = A*Math.cos(angle), pv = -mass*w0*A*Math.sin(angle);
+    const {cx,cy} = toPC(xv, pv);
+    i===0 ? pc.moveTo(cx,cy) : pc.lineTo(cx,cy);
+  }
+  pc.closePath(); pc.stroke();
+  // Trail (last 2 periods)
+  const trail_len = 2*Math.PI/w0;
+  const n_trail = 200;
+  for(let i=0;i<=n_trail;i++) {
+    const t_tr = t_cur - trail_len*(n_trail-i)/n_trail;
+    const xv = A*Math.cos(w0*t_tr);
+    const pv = -mass*w0*A*Math.sin(w0*t_tr);
+    const {cx,cy} = toPC(xv, pv);
+    const alpha = i/n_trail;
+    pc.beginPath(); pc.arc(cx,cy,2.5,0,2*Math.PI);
+    pc.fillStyle=`rgba(126,184,247,${alpha*0.9})`; pc.fill();
+  }
+  // Current point
+  const x_cur = A*Math.cos(w0*t_cur), p_cur = -mass*w0*A*Math.sin(w0*t_cur);
+  const {cx,cy} = toPC(x_cur, p_cur);
+  pc.beginPath(); pc.arc(cx,cy,9,0,2*Math.PI);
+  pc.fillStyle='#ff8c42'; pc.fill(); pc.strokeStyle='#fff'; pc.lineWidth=2; pc.stroke();
+  // Velocity arrow at dot
+  const vx_dir = -A*Math.sin(w0*t_cur)*w0, px_dir = -mass*w0*A*Math.cos(w0*t_cur);
+  const len = Math.sqrt(vx_dir*vx_dir + (px_dir/mass)*(px_dir/mass));
+  if(len > 0.01) {
+    const ex = toPC(x_cur + vx_dir/len*0.3, p_cur + px_dir/len*6);
+    pc.beginPath(); pc.moveTo(cx,cy); pc.lineTo(ex.cx, ex.cy);
+    pc.strokeStyle='#ffd740'; pc.lineWidth=2; pc.stroke();
+  }
+  // Energy label
+  const E = 0.5*k*A*A;
+  pc.fillStyle='#aaa'; pc.font='11px sans-serif'; pc.textAlign='left';
+  pc.fillText(`E = ½kA² = ${E.toFixed(2)} J`, pad, pad+20);
+  // Update stats
+  const ke = 0.5*mass*(w0*A*Math.sin(w0*t_cur))**2;
+  const ue = 0.5*k*(A*Math.cos(w0*t_cur))**2;
+  document.getElementById('info2').innerHTML =
+    `<div class="badge2">x = <b>${x_cur.toFixed(3)} m</b></div>` +
+    `<div class="badge2">p = <b>${p_cur.toFixed(3)} kg·m/s</b></div>` +
+    `<div class="badge2">KE = <b style="color:#4caf50">${ke.toFixed(3)} J</b></div>` +
+    `<div class="badge2">PE = <b style="color:#ffd740">${ue.toFixed(3)} J</b></div>` +
+    `<div class="badge2">E = <b style="color:#7eb8f7">${(ke+ue).toFixed(3)} J</b></div>` +
+    `<div class="badge2">ω₀ = ${w0.toFixed(1)} rad/s | T = ${(2*Math.PI/w0).toFixed(3)} s</div>`;
+}
+
+function frame() {
+  if(!running) return;
+  t += 0.02;
+  getP();
+  drawXT(t);
+  drawPhase(t);
+  animId = requestAnimationFrame(frame);
+}
+
+document.getElementById('btn').addEventListener('click', () => {
+  running = !running;
+  document.getElementById('btn').textContent = running ? '⏸ Pause' : '▶ Resume';
+  if(running) frame();
+});
+['as','ws','ms'].forEach(id => document.getElementById(id).addEventListener('input', () => { getP(); drawXT(t); drawPhase(t); }));
+frame();
+</script>
+</body>
+</html>

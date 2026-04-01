@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>P6 – Linear Drag Motion</title>
+<style>
+  body { margin:0; background:#0f0f1a; color:#eee; font-family:'Segoe UI',sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  h2 { color:#7eb8f7; }
+  .row { display:flex; gap:20px; }
+  canvas { background:#16182a; border:1px solid #2a2d4a; border-radius:8px; }
+  .controls { background:#1e2240; border-radius:8px; padding:12px 20px; margin:10px 0; display:flex; gap:20px; align-items:center; flex-wrap:wrap; }
+  label { color:#aaa; font-size:13px; }
+  input[type=range] { width:110px; }
+  .val { color:#7eb8f7; font-weight:bold; }
+  .legend { display:flex; gap:20px; margin:6px 0; font-size:13px; }
+  .dot { width:18px; height:3px; display:inline-block; border-radius:2px; margin-right:6px; vertical-align:middle; }
+</style>
+</head>
+<body>
+<h2>Problem 6 – Motion with Linear Drag</h2>
+<div class="controls">
+  <label>v₀ = <span class="val" id="v0v">10</span> m/s <input type="range" id="v0s" min="1" max="30" step="1" value="10"></label>
+  <label>k = <span class="val" id="kv">0.5</span> kg/s <input type="range" id="ks" min="0.05" max="3" step="0.05" value="0.5"></label>
+  <label>m = <span class="val" id="mv">1</span> kg <input type="range" id="ms" min="0.5" max="5" step="0.5" value="1"></label>
+</div>
+<div class="legend">
+  <span><span class="dot" style="background:#ff6b6b"></span>v(t) with drag</span>
+  <span><span class="dot" style="background:#4caf50"></span>v₀ (no drag)</span>
+  <span><span class="dot" style="background:#7eb8f7"></span>x(t) with drag</span>
+  <span><span class="dot" style="background:#ffd740"></span>x(t) no drag</span>
+</div>
+<div class="row">
+  <canvas id="vc" width="460" height="360"></canvas>
+  <canvas id="xc" width="460" height="360"></canvas>
+</div>
+<div id="info" style="margin-top:10px;background:#1e2240;border-radius:8px;padding:10px 22px;font-size:13px;text-align:center;"></div>
+
+<script>
+let v0=10, k=0.5, m=1;
+const W=460, H=360, pad=52;
+
+function getParams() {
+  v0 = parseFloat(document.getElementById('v0s').value);
+  k = parseFloat(document.getElementById('ks').value);
+  m = parseFloat(document.getElementById('ms').value);
+  document.getElementById('v0v').textContent = v0;
+  document.getElementById('kv').textContent = k.toFixed(2);
+  document.getElementById('mv').textContent = m;
+}
+
+function toC(ctx, tv, val, tmax, vmin, vmax) {
+  return {
+    cx: pad + tv/tmax*(W-2*pad),
+    cy: H - pad - (val - vmin)/(vmax - vmin)*(H-2*pad)
+  };
+}
+
+function drawGraph(canvasId, getData, title, xlabel, ylabel, curves) {
+  const c = document.getElementById(canvasId).getContext('2d');
+  c.clearRect(0,0,W,H);
+  const tau = m/k;
+  const tmax = Math.min(6*tau, 30);
+  const { vmin, vmax } = getData(tmax);
+  // Title + labels
+  c.fillStyle='#7eb8f7'; c.font='bold 13px sans-serif'; c.textAlign='center';
+  c.fillText(title, W/2, 20);
+  c.fillStyle='#888'; c.font='12px sans-serif';
+  c.fillText(xlabel, W/2, H-6);
+  c.save(); c.translate(13, H/2); c.rotate(-Math.PI/2); c.fillText(ylabel, 0, 0); c.restore();
+  // Grid
+  c.strokeStyle='#1e2040'; c.lineWidth=1;
+  for(let i=0; i<=5; i++) {
+    const tx = i/5*tmax;
+    const {cx} = toC(c, tx, 0, tmax, vmin, vmax);
+    c.beginPath(); c.moveTo(cx, pad); c.lineTo(cx, H-pad); c.stroke();
+    c.fillStyle='#555'; c.font='10px mono'; c.textAlign='center'; c.fillText(tx.toFixed(1), cx, H-pad+13);
+  }
+  // Axes
+  const ox = toC(c, 0, 0, tmax, vmin, vmax);
+  c.strokeStyle='#3a3d5a'; c.lineWidth=1.5;
+  c.beginPath(); c.moveTo(pad, ox.cy); c.lineTo(W-pad, ox.cy); c.stroke();
+  c.beginPath(); c.moveTo(ox.cx, pad); c.lineTo(ox.cx, H-pad); c.stroke();
+  // Curves
+  curves.forEach(({fn, color, dash}) => {
+    c.beginPath(); c.strokeStyle=color; c.lineWidth=2.5;
+    if(dash) c.setLineDash([6,4]); else c.setLineDash([]);
+    for(let i=0; i<=300; i++) {
+      const t = tmax*i/300;
+      const val = fn(t);
+      if(val < vmin || val > vmax*1.02) { c.beginPath(); continue; }
+      const {cx,cy} = toC(c, t, val, tmax, vmin, vmax);
+      i===0 ? c.moveTo(cx,cy) : c.lineTo(cx,cy);
+    }
+    c.stroke();
+    c.setLineDash([]);
+  });
+  return { tau, tmax };
+}
+
+function draw() {
+  getParams();
+  const tau = m/k;
+  const x_inf = m*v0/k;
+  const tmax = Math.min(6*tau, 30);
+
+  // Velocity graph
+  const vmax = v0*1.05, vmin = -0.1*v0;
+  drawGraph('vc', () => ({vmin, vmax}), 'v(t) — Velocity', 't (s)', 'v (m/s)', [
+    { fn: t => v0*Math.exp(-k*t/m), color:'#ff6b6b' },
+    { fn: t => v0, color:'#4caf50', dash:true }
+  ]);
+  const vc = document.getElementById('vc').getContext('2d');
+  // tau annotation
+  const { cx:tcx, cy:tcy } = toC(vc, tau, v0*Math.exp(-1), tmax, vmin, vmax);
+  vc.beginPath(); vc.arc(tcx, tcy, 6, 0, 2*Math.PI); vc.fillStyle='#ff6b6b'; vc.fill();
+  vc.fillStyle='#ff6b6b'; vc.font='11px sans-serif'; vc.textAlign='left';
+  vc.fillText(`τ=${tau.toFixed(2)}s, v=v₀/e`, tcx+8, tcy-6);
+  // Asymptote v=0
+  vc.strokeStyle='rgba(255,107,107,0.3)'; vc.lineWidth=1; vc.setLineDash([3,3]);
+  const oy = toC(vc, 0, 0, tmax, vmin, vmax);
+  vc.beginPath(); vc.moveTo(pad, oy.cy); vc.lineTo(W-pad, oy.cy); vc.stroke();
+  vc.setLineDash([]);
+
+  // Position graph
+  const xmax_val = x_inf*1.05;
+  const no_drag_at_end = v0*tmax;
+  const ymax2 = Math.max(xmax_val, no_drag_at_end)*1.05;
+  drawGraph('xc', () => ({vmin:0, vmax:ymax2}), 'x(t) — Position', 't (s)', 'x (m)', [
+    { fn: t => m*v0/k*(1 - Math.exp(-k*t/m)), color:'#7eb8f7' },
+    { fn: t => v0*t, color:'#ffd740', dash:true }
+  ]);
+  const xc = document.getElementById('xc').getContext('2d');
+  // x_inf asymptote
+  const {cy: acy} = toC(xc, 0, x_inf, tmax, 0, ymax2);
+  xc.strokeStyle='rgba(126,184,247,0.4)'; xc.lineWidth=1; xc.setLineDash([4,4]);
+  xc.beginPath(); xc.moveTo(pad, acy); xc.lineTo(W-pad, acy); xc.stroke();
+  xc.setLineDash([]);
+  xc.fillStyle='#7eb8f7'; xc.font='11px sans-serif'; xc.textAlign='left';
+  xc.fillText(`x∞ = mv₀/k = ${x_inf.toFixed(2)} m`, pad+4, acy-6);
+
+  document.getElementById('info').innerHTML =
+    `τ = m/k = <b style="color:#ff6b6b">${tau.toFixed(3)} s</b> &nbsp;|&nbsp; ` +
+    `x∞ = mv₀/k = <b style="color:#7eb8f7">${x_inf.toFixed(3)} m</b> &nbsp;|&nbsp; ` +
+    `v(τ) = v₀/e = <b style="color:#ff8c42">${(v0/Math.E).toFixed(3)} m/s</b> &nbsp;|&nbsp; ` +
+    `No-drag x at tmax = <b style="color:#ffd740">${(v0*tmax).toFixed(2)} m</b> (unbounded)`;
+}
+
+['v0s','ks','ms'].forEach(id => document.getElementById(id).addEventListener('input', draw));
+draw();
+</script>
+</body>
+</html>

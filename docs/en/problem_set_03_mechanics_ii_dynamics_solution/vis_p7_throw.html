@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>P7 – Vertical Throw with Drag</title>
+<style>
+  body { margin:0; background:#0f0f1a; color:#eee; font-family:'Segoe UI',sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  h2 { color:#7eb8f7; }
+  canvas { background:#16182a; border:1px solid #2a2d4a; border-radius:8px; }
+  .controls { background:#1e2240; border-radius:8px; padding:12px 20px; margin:10px 0; display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+  label { color:#aaa; font-size:13px; }
+  input[type=range] { width:100px; }
+  .val { color:#7eb8f7; font-weight:bold; }
+  .row { display:flex; gap:18px; }
+  .legend { display:flex; gap:18px; font-size:13px; margin:6px 0; }
+  .dot { width:18px; height:3px; display:inline-block; border-radius:2px; margin-right:6px; vertical-align:middle; }
+  #info { margin-top:10px;background:#1e2240;border-radius:8px;padding:10px 22px;font-size:13px;text-align:center; }
+</style>
+</head>
+<body>
+<h2>Problem 7 – Vertical Throw with Drag (Analytical vs Numerical)</h2>
+<div class="controls">
+  <label>v₀ = <span class="val" id="v0v">15</span> m/s <input type="range" id="v0s" min="1" max="40" step="1" value="15"></label>
+  <label>k = <span class="val" id="kv">0.3</span> kg/s <input type="range" id="ks" min="0.01" max="2" step="0.01" value="0.3"></label>
+  <label>m = <span class="val" id="mv">1</span> kg <input type="range" id="ms" min="0.5" max="5" step="0.5" value="1"></label>
+  <label>Δt (Euler) = <span class="val" id="dtv">0.05</span> s <input type="range" id="dts" min="0.005" max="0.2" step="0.005" value="0.05"></label>
+</div>
+<div class="legend">
+  <span><span class="dot" style="background:#7eb8f7;height:3px"></span>Analytical x(t)</span>
+  <span><span class="dot" style="background:#ff6b6b;height:3px"></span>Euler numerical x(t)</span>
+  <span><span class="dot" style="background:#ffd740;height:3px;border-top:1px dashed #ffd740"></span>No drag</span>
+  <span><span class="dot" style="background:#4caf50"></span>h_max analytical</span>
+  <span><span class="dot" style="background:#ff8c42"></span>h_max numerical</span>
+</div>
+<div class="row">
+  <canvas id="xc" width="460" height="400"></canvas>
+  <canvas id="vc" width="460" height="400"></canvas>
+</div>
+<div id="info"></div>
+
+<script>
+const g = 9.81;
+let v0=15, k=0.3, m=1, dt_euler=0.05;
+const W=460, H=400, pad=52;
+
+function getParams() {
+  v0 = parseFloat(document.getElementById('v0s').value);
+  k = parseFloat(document.getElementById('ks').value);
+  m = parseFloat(document.getElementById('ms').value);
+  dt_euler = parseFloat(document.getElementById('dts').value);
+  document.getElementById('v0v').textContent = v0;
+  document.getElementById('kv').textContent = k.toFixed(2);
+  document.getElementById('mv').textContent = m;
+  document.getElementById('dtv').textContent = dt_euler.toFixed(3);
+}
+
+function analytical_x(t) {
+  const tau = m/k, vt = m*g/k;
+  return (v0 + vt)*tau*(1 - Math.exp(-t/tau)) - vt*t;
+}
+function analytical_v(t) {
+  const tau = m/k, vt = m*g/k;
+  return (v0 + vt)*Math.exp(-t/tau) - vt;
+}
+
+function eulerSim(tmax, dt) {
+  const pts = [{t:0, x:0, v:v0}];
+  let t=0, xv=0, vv=v0;
+  while(t < tmax) {
+    const acc = (-m*g - k*vv)/m;
+    vv += dt*acc;
+    xv += dt*vv;
+    t += dt;
+    pts.push({t, x:xv, v:vv});
+    if(xv < -0.5) break;
+  }
+  return pts;
+}
+
+function toC(tv, val, tmax, vmin, vmax) {
+  return {
+    cx: pad + tv/tmax*(W-2*pad),
+    cy: H - pad - (val - vmin)/(vmax - vmin)*(H-2*pad)
+  };
+}
+
+function drawAxes(ctx, title, xlabel, ylabel) {
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#7eb8f7'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center';
+  ctx.fillText(title, W/2, 20);
+  ctx.fillStyle='#888'; ctx.font='12px sans-serif';
+  ctx.fillText(xlabel, W/2, H-6);
+  ctx.save(); ctx.translate(13, H/2); ctx.rotate(-Math.PI/2); ctx.fillText(ylabel, 0, 0); ctx.restore();
+}
+
+function draw() {
+  getParams();
+  const tau = m/k, vt = m*g/k;
+  const t_top = tau*Math.log(1 + v0/vt);
+  const h_max_analytical = analytical_x(t_top);
+  // Find when ball returns: x(t)=0 after t_top
+  let t_land = t_top;
+  for(let t=t_top; t<60; t+=0.01) {
+    if(analytical_x(t) < 0) { t_land = t; break; }
+  }
+  const tmax = t_land + 0.5;
+  const euler_pts = eulerSim(tmax, dt_euler);
+  const h_max_euler = Math.max(...euler_pts.map(p => p.x));
+
+  // X(t) graph
+  const xc = document.getElementById('xc').getContext('2d');
+  drawAxes(xc, 'x(t) — Height vs Time', 't (s)', 'x (m)');
+  const h_nodrag = v0*v0/(2*g);
+  const xmax_val = Math.max(h_max_analytical, h_nodrag)*1.15;
+  const xmin_val = -0.2;
+  // Grid
+  xc.strokeStyle='#1e2040'; xc.lineWidth=1;
+  for(let i=0;i<=5;i++) {
+    const tx = i/5*tmax;
+    const {cx} = toC(tx, 0, tmax, xmin_val, xmax_val);
+    xc.beginPath(); xc.moveTo(cx, pad); xc.lineTo(cx, H-pad); xc.stroke();
+    xc.fillStyle='#555'; xc.font='10px mono'; xc.textAlign='center'; xc.fillText(tx.toFixed(1), cx, H-pad+13);
+  }
+  const ox = toC(0, 0, tmax, xmin_val, xmax_val);
+  xc.strokeStyle='#3a3d5a'; xc.lineWidth=1.5;
+  xc.beginPath(); xc.moveTo(pad, ox.cy); xc.lineTo(W-pad, ox.cy); xc.stroke();
+  xc.beginPath(); xc.moveTo(ox.cx, pad); xc.lineTo(ox.cx, H-pad); xc.stroke();
+
+  // No-drag parabola
+  xc.beginPath(); xc.strokeStyle='rgba(255,215,64,0.5)'; xc.lineWidth=1.5; xc.setLineDash([5,4]);
+  for(let i=0;i<=200;i++) {
+    const t = tmax*i/200;
+    const xv = v0*t - 0.5*g*t*t;
+    const {cx,cy} = toC(t, xv, tmax, xmin_val, xmax_val);
+    i===0 ? xc.moveTo(cx,cy) : xc.lineTo(cx,cy);
+  }
+  xc.stroke(); xc.setLineDash([]);
+
+  // Analytical
+  xc.beginPath(); xc.strokeStyle='#7eb8f7'; xc.lineWidth=2.5;
+  for(let i=0;i<=400;i++) {
+    const t = tmax*i/400;
+    const xv = analytical_x(t);
+    const {cx,cy} = toC(t, xv, tmax, xmin_val, xmax_val);
+    i===0 ? xc.moveTo(cx,cy) : xc.lineTo(cx,cy);
+  }
+  xc.stroke();
+
+  // Euler
+  xc.beginPath(); xc.strokeStyle='#ff6b6b'; xc.lineWidth=2; xc.setLineDash([4,3]);
+  euler_pts.forEach((p,i) => {
+    const {cx,cy} = toC(p.t, p.x, tmax, xmin_val, xmax_val);
+    i===0 ? xc.moveTo(cx,cy) : xc.lineTo(cx,cy);
+  });
+  xc.stroke(); xc.setLineDash([]);
+
+  // h_max markers
+  const {cx:hmacx, cy:hmacy} = toC(t_top, h_max_analytical, tmax, xmin_val, xmax_val);
+  xc.beginPath(); xc.arc(hmacx, hmacy, 7, 0, 2*Math.PI); xc.fillStyle='#4caf50'; xc.fill();
+  xc.fillStyle='#4caf50'; xc.font='11px sans-serif'; xc.textAlign='left';
+  xc.fillText(`h=${h_max_analytical.toFixed(2)}m`, hmacx+10, hmacy-4);
+
+  // V(t) graph
+  const vc = document.getElementById('vc').getContext('2d');
+  drawAxes(vc, 'v(t) — Velocity vs Time', 't (s)', 'v (m/s)');
+  const v_land = analytical_v(t_land);
+  const vmin_val = Math.min(v_land, -vt)*1.1, vmax_val = v0*1.1;
+  // Axes
+  const ov = toC(0, 0, tmax, vmin_val, vmax_val);
+  vc.strokeStyle='#3a3d5a'; vc.lineWidth=1.5;
+  vc.beginPath(); vc.moveTo(pad, ov.cy); vc.lineTo(W-pad, ov.cy); vc.stroke();
+  vc.beginPath(); vc.moveTo(ov.cx, pad); vc.lineTo(ov.cx, H-pad); vc.stroke();
+  // Terminal velocity line
+  const {cy:vtcy} = toC(0, -vt, tmax, vmin_val, vmax_val);
+  vc.strokeStyle='rgba(255,107,107,0.3)'; vc.lineWidth=1; vc.setLineDash([3,3]);
+  vc.beginPath(); vc.moveTo(pad, vtcy); vc.lineTo(W-pad, vtcy); vc.stroke();
+  vc.setLineDash([]);
+  vc.fillStyle='rgba(255,107,107,0.7)'; vc.font='11px sans-serif'; vc.textAlign='left';
+  vc.fillText(`-v_t = -${vt.toFixed(2)} m/s`, pad+4, vtcy-4);
+  // Analytical v
+  vc.beginPath(); vc.strokeStyle='#7eb8f7'; vc.lineWidth=2.5;
+  for(let i=0;i<=400;i++) {
+    const t=tmax*i/400, vv=analytical_v(t);
+    const {cx,cy} = toC(t, vv, tmax, vmin_val, vmax_val);
+    i===0 ? vc.moveTo(cx,cy) : vc.lineTo(cx,cy);
+  }
+  vc.stroke();
+  // Euler v
+  vc.beginPath(); vc.strokeStyle='#ff6b6b'; vc.lineWidth=2; vc.setLineDash([4,3]);
+  euler_pts.forEach((p,i) => {
+    const {cx,cy} = toC(p.t, p.v, tmax, vmin_val, vmax_val);
+    i===0 ? vc.moveTo(cx,cy) : vc.lineTo(cx,cy);
+  });
+  vc.stroke(); vc.setLineDash([]);
+  // Grid
+  vc.strokeStyle='#1e2040'; vc.lineWidth=1;
+  for(let i=0;i<=5;i++) {
+    const tx = i/5*tmax;
+    const {cx} = toC(tx, 0, tmax, vmin_val, vmax_val);
+    vc.beginPath(); vc.moveTo(cx, pad); vc.lineTo(cx, H-pad); vc.stroke();
+    vc.fillStyle='#555'; vc.font='10px mono'; vc.textAlign='center'; vc.fillText(tx.toFixed(1), cx, H-pad+13);
+  }
+
+  document.getElementById('info').innerHTML =
+    `τ = m/k = ${tau.toFixed(2)}s &nbsp;|&nbsp; v_t = mg/k = <b>${vt.toFixed(2)} m/s</b> &nbsp;|&nbsp; ` +
+    `t* (top) = ${t_top.toFixed(3)}s &nbsp;|&nbsp; ` +
+    `h_max <span style="color:#4caf50">(analytical)</span> = <b>${h_max_analytical.toFixed(3)} m</b> &nbsp;|&nbsp; ` +
+    `h_max <span style="color:#ff8c42">(Euler Δt=${dt_euler})</span> = <b>${h_max_euler.toFixed(3)} m</b> &nbsp;|&nbsp; ` +
+    `h_no_drag = <span style="color:#ffd740">${h_nodrag.toFixed(3)} m</span>`;
+}
+
+['v0s','ks','ms','dts'].forEach(id => document.getElementById(id).addEventListener('input', draw));
+draw();
+</script>
+</body>
+</html>
